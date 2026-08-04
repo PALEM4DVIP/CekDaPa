@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const OPR_ENDPOINT = "https://openpagerank.com/api/v1.0/getPageRank";
+const OPR_ENDPOINT = "https://openpagerank.keywordseverywhere.com/v1/domains/bulk";
 const MAX_DOMAINS_PER_CALL = 100;
 
 function isValidDomain(domain: string): boolean {
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "OPENPAGERANK_API_KEY belum diatur di server. Tambahkan environment variable ini di Vercel (Project Settings → Environment Variables), lalu redeploy.",
+          "OPENPAGERANK_API_KEY belum diatur di server. Buat key baru di openpagerank.keywordseverywhere.com/dashboard, lalu tambahkan sebagai environment variable di Vercel (Project Settings → Environment Variables) dan redeploy.",
       },
       { status: 500 }
     );
@@ -55,11 +55,11 @@ export async function POST(req: NextRequest) {
   }
 
   const valid = cleaned.filter(isValidDomain);
-  const invalid = cleaned.filter((d) => !isValidDomain(d));
+  const invalidFormat = cleaned.filter((d) => !isValidDomain(d));
 
   const results: Record<string, any> = {};
 
-  for (const d of invalid) {
+  for (const d of invalidFormat) {
     results[d] = {
       domain: d,
       status_code: 400,
@@ -68,17 +68,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (valid.length > 0) {
-    const params = new URLSearchParams();
-    valid.forEach((d) => params.append("domains[]", d));
-
     try {
-      const res = await fetch(`${OPR_ENDPOINT}?${params.toString()}`, {
-        method: "GET",
+      const res = await fetch(OPR_ENDPOINT, {
+        method: "POST",
         headers: {
-          "API-OPR": apiKey,
-          "User-Agent": "Rankline/1.0 (+https://vercel.com)",
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
           Accept: "application/json",
         },
+        body: JSON.stringify({ domains: valid, include_history: false }),
         cache: "no-store",
       });
 
@@ -90,42 +88,54 @@ export async function POST(req: NextRequest) {
         // Non-JSON body (e.g. an HTML error/challenge page).
       }
 
-      if (!res.ok || !data || data.status_code !== 200) {
+      if (!res.ok || !data) {
         let message =
-          data?.status_message ||
-          data?.message ||
-          data?.error ||
+          data?.error?.message ||
           (rawText ? rawText.slice(0, 200) : "") ||
           `OpenPageRank API mengembalikan status ${res.status}`;
 
         if (res.status === 401) {
-          message = "API key OpenPageRank tidak valid atau belum diisi dengan benar.";
-        } else if (res.status === 403) {
           message =
-            "OpenPageRank menolak permintaan (403). Kemungkinan penyebab: API key salah/belum aktif, akun belum diverifikasi, atau kuota harian habis. Pesan asli: " +
-            (data?.status_message || data?.message || data?.error || rawText.slice(0, 150) || "tidak ada detail");
+            "API key tidak valid. Pastikan kamu membuat key baru di openpagerank.keywordseverywhere.com/dashboard (format opr_live_...) dan menyimpannya sebagai OPENPAGERANK_API_KEY di Vercel.";
         } else if (res.status === 429) {
-          message = "Kuota permintaan OpenPageRank harian sudah habis.";
+          message =
+            data?.error?.type === "quota_error"
+              ? "Kuota bulanan domain sudah habis."
+              : "Terlalu banyak permintaan per menit, coba lagi sesaat lagi.";
+        } else if (res.status === 400) {
+          message = data?.error?.message || "Permintaan tidak valid.";
         }
 
         for (const d of valid) {
           results[d] = { domain: d, status_code: res.status, error: message };
         }
       } else {
-        const responseList: any[] = Array.isArray(data.response) ? data.response : [];
-        for (const item of responseList) {
+        const list: any[] = Array.isArray(data.results) ? data.results : [];
+        for (const item of list) {
           const key = cleanDomain(item.domain || "");
-          results[key] = {
-            domain: item.domain,
-            status_code: item.status_code,
-            error: item.status_code !== 200 ? item.error : undefined,
-            page_rank_integer: item.page_rank_integer,
-            page_rank_decimal:
-              typeof item.page_rank_decimal === "string"
-                ? parseFloat(item.page_rank_decimal)
-                : item.page_rank_decimal,
-            rank: item.rank ?? null,
-          };
+          if (item.found) {
+            results[key] = {
+              domain: item.domain,
+              status_code: 200,
+              page_rank_integer:
+                typeof item.open_page_rank === "number" ? Math.round(item.open_page_rank) : undefined,
+              page_rank_decimal: item.open_page_rank,
+              rank: item.rank != null ? String(item.rank) : null,
+              referring_domains: item.referring_domains,
+            };
+          } else {
+            results[key] = {
+              domain: item.domain,
+              status_code: 404,
+              error: "Domain tidak ditemukan di data Common Crawl",
+            };
+          }
+        }
+
+        const invalidFromApi: string[] = Array.isArray(data.invalid) ? data.invalid : [];
+        for (const raw of invalidFromApi) {
+          const key = cleanDomain(raw);
+          results[key] = { domain: raw, status_code: 400, error: "Format domain tidak valid" };
         }
       }
     } catch (err: any) {
