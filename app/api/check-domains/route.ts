@@ -76,17 +76,38 @@ export async function POST(req: NextRequest) {
         method: "GET",
         headers: {
           "API-OPR": apiKey,
+          "User-Agent": "Rankline/1.0 (+https://vercel.com)",
+          Accept: "application/json",
         },
         cache: "no-store",
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        // Non-JSON body (e.g. an HTML error/challenge page).
+      }
 
-      if (!res.ok || data.status_code !== 200) {
-        const message =
+      if (!res.ok || !data || data.status_code !== 200) {
+        let message =
           data?.status_message ||
           data?.message ||
+          data?.error ||
+          (rawText ? rawText.slice(0, 200) : "") ||
           `OpenPageRank API mengembalikan status ${res.status}`;
+
+        if (res.status === 401) {
+          message = "API key OpenPageRank tidak valid atau belum diisi dengan benar.";
+        } else if (res.status === 403) {
+          message =
+            "OpenPageRank menolak permintaan (403). Kemungkinan penyebab: API key salah/belum aktif, akun belum diverifikasi, atau kuota harian habis. Pesan asli: " +
+            (data?.status_message || data?.message || data?.error || rawText.slice(0, 150) || "tidak ada detail");
+        } else if (res.status === 429) {
+          message = "Kuota permintaan OpenPageRank harian sudah habis.";
+        }
+
         for (const d of valid) {
           results[d] = { domain: d, status_code: res.status, error: message };
         }
