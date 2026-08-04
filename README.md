@@ -21,10 +21,17 @@ Tailwind CSS, siap deploy ke Vercel.
 
 ## 1. Dapatkan API key OpenPageRank
 
-1. Daftar gratis di https://www.domcop.com/openpagerank/auth/signup
-2. Ambil API key dari dashboard akun Anda.
-3. Batas gratis: 1.000 permintaan per hari, maksimal 100 domain per
-   permintaan — sudah sesuai dengan batas 100 domain pada aplikasi ini.
+OpenPageRank kini berjalan di bawah platform Keywords Everywhere, dengan API
+key format baru (`opr_live_...`). Key lama dari domcop.com **tidak berlaku
+lagi** di endpoint baru.
+
+1. Buka https://openpagerank.keywordseverywhere.com/dashboard
+2. Masuk/daftar dengan akun Keywords Everywhere.
+3. Buat API key baru dari dashboard (diawali `opr_live_`).
+4. Batas tier gratis: kuota bulanan (bukan harian) domain, maksimal 100
+   domain unik per permintaan — sudah sesuai dengan batas 100 domain pada
+   aplikasi ini. Cek sisa kuota kapan saja lewat endpoint `/v1/usage` di
+   dashboard mereka.
 
 ## 2. Jalankan secara lokal
 
@@ -55,8 +62,9 @@ dashboard (lihat Opsi B, langkah 3).
 2. Di https://vercel.com, klik **Add New → Project**, lalu pilih repo
    tersebut.
 3. Buka **Project Settings → Environment Variables**, tambahkan:
-   - `OPENPAGERANK_API_KEY` = API key Anda (isi untuk Production, Preview,
-     dan Development)
+   - `OPENPAGERANK_API_KEY` = API key Anda dari
+     openpagerank.keywordseverywhere.com/dashboard (isi untuk Production,
+     Preview, dan Development)
 4. Klik **Deploy**.
 
 Vercel otomatis mendeteksi ini sebagai proyek Next.js — tidak perlu
